@@ -1,0 +1,108 @@
+<!doctype html>
+<html lang="en"><head><meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Provenance Guard</title>
+<style>
+  :root { --bg:#0f1525; --card:#192238; --line:#2a3650; --txt:#e8eefc; --mut:#93a2c4; }
+  * { box-sizing:border-box; }
+  body { font-family:-apple-system,Segoe UI,Roboto,sans-serif; background:var(--bg);
+         color:var(--txt); margin:0; padding:2rem 1rem; }
+  .wrap { max-width:760px; margin:0 auto; }
+  h1 { font-size:1.6rem; margin:0 0 .2rem; }
+  .sub { color:var(--mut); margin:0 0 1.4rem; }
+  .card { background:var(--card); border:1px solid var(--line); border-radius:14px;
+          padding:1.1rem 1.2rem; margin-bottom:1rem; }
+  textarea { width:100%; min-height:120px; background:#0e1626; color:var(--txt);
+             border:1px solid var(--line); border-radius:10px; padding:.8rem; font-size:1rem;
+             resize:vertical; }
+  .row { display:flex; gap:.6rem; flex-wrap:wrap; margin-top:.7rem; align-items:center; }
+  button { cursor:pointer; border:0; border-radius:9px; padding:.62rem 1rem; font-size:.95rem;
+           font-weight:600; }
+  .ex { background:#23304d; color:var(--txt); border:1px solid var(--line); font-weight:500; }
+  .go { background:#4f8cff; color:#fff; }
+  .ghost { background:transparent; color:var(--mut); border:1px solid var(--line); }
+  a { color:#7fb0ff; }
+  .muted { color:var(--mut); font-size:.85rem; }
+  #result { display:none; }
+  .badge { display:inline-block; padding:.35rem .8rem; border-radius:999px; font-weight:700;
+           font-size:1.05rem; }
+  .b-ai { background:#3a1d22; color:#ff8a9b; border:1px solid #6e2b36; }
+  .b-human { background:#16301f; color:#74e0a3; border:1px solid #2c6043; }
+  .b-unc { background:#332c12; color:#f4cf6b; border:1px solid #6b5a22; }
+  .conf { font-size:2.1rem; font-weight:800; margin:.5rem 0 0; }
+  .label { background:#0e1626; border:1px solid var(--line); border-radius:10px; padding:.8rem 1rem;
+           margin-top:.8rem; line-height:1.45; }
+  .sig { display:flex; align-items:center; gap:.6rem; margin:.35rem 0; font-size:.9rem; }
+  .sig .k { width:160px; color:var(--mut); }
+  .bar { flex:1; height:10px; background:#0e1626; border-radius:6px; overflow:hidden; }
+  .bar span { display:block; height:100%; background:#4f8cff; }
+  .ok { color:#74e0a3; }
+  input[type=text]{ flex:1; min-width:240px; background:#0e1626; color:var(--txt);
+                    border:1px solid var(--line); border-radius:9px; padding:.6rem; }
+</style></head>
+<body><div class="wrap">
+  <h1>&#128737;&#65039; Provenance Guard</h1>
+  <p class="sub">Paste some writing. It estimates whether a person or an AI wrote it, how confident it is, and gives a plain-language label. You can appeal the result.</p>
+
+  <div class="card">
+    <textarea id="text" placeholder="Paste or type some text here..."></textarea>
+    <div class="row">
+      <button class="ex" onclick="fillAI()">Use an AI-style example</button>
+      <button class="ex" onclick="fillHuman()">Use a human example</button>
+      <button class="go" onclick="check()">Check this text &rarr;</button>
+    </div>
+  </div>
+
+  <div class="card" id="result">
+    <span id="badge" class="badge"></span>
+    <div class="conf"><span id="confpct"></span> <span class="muted" style="font-size:1rem">estimated AI likelihood</span></div>
+    <div id="signals" style="margin-top:.9rem"></div>
+    <div class="label" id="label"></div>
+    <div class="row">
+      <input id="reason" type="text" value="I wrote this myself, that's just how I write.">
+      <button class="ghost" onclick="appeal()">Appeal this decision</button>
+    </div>
+    <div id="appealMsg" class="muted" style="margin-top:.5rem"></div>
+  </div>
+
+  <p class="muted">Logged to a structured audit trail &middot; <a href="/dashboard" target="_blank">open the analytics dashboard &rarr;</a> &middot; <a href="/api" target="_blank">API</a></p>
+</div>
+<script>
+const AI = "Artificial intelligence represents a transformative paradigm shift in modern society. It is important to note that stakeholders across various sectors must collaborate to ensure responsible deployment.";
+const HUMAN = "ok so i finally tried that ramen place downtown and honestly? underwhelming. way too much sodium and i was thirsty for hours after. probably wont go back.";
+let lastId = null;
+const $ = id => document.getElementById(id);
+function fillAI(){ $("text").value = AI; }
+function fillHuman(){ $("text").value = HUMAN; }
+
+async function check(){
+  const text = $("text").value.trim();
+  if(!text){ return; }
+  const r = await fetch("/submit", {method:"POST", headers:{"Content-Type":"application/json"},
+    body: JSON.stringify({text, creator_id:"web-user"})});
+  const d = await r.json();
+  if(d.error){ alert(d.message || "error"); return; }
+  lastId = d.content_id;
+  const cls = d.attribution === "likely_ai" ? "b-ai" : d.attribution === "likely_human" ? "b-human" : "b-unc";
+  const b = $("badge"); b.className = "badge " + cls; b.textContent = d.label_detail.short;
+  $("confpct").textContent = Math.round(d.confidence*100) + "%";
+  const s = d.signals; let rows = "";
+  const add = (name, v) => { if(v===null||v===undefined) return;
+    rows += `<div class="sig"><div class="k">${name}</div><div class="bar"><span style="width:${Math.round(v*100)}%"></span></div><div>${Math.round(v*100)}%</div></div>`; };
+  add("LLM (meaning)", s.llm); add("Stylometric (structure)", s.stylometric); add("Repetition", s.repetition);
+  $("signals").innerHTML = rows;
+  $("label").textContent = d.label;
+  $("appealMsg").textContent = "";
+  $("result").style.display = "block";
+  $("result").scrollIntoView({behavior:"smooth", block:"nearest"});
+}
+
+async function appeal(){
+  if(!lastId) return;
+  const r = await fetch("/appeal", {method:"POST", headers:{"Content-Type":"application/json"},
+    body: JSON.stringify({content_id:lastId, creator_reasoning: $("reason").value})});
+  const d = await r.json();
+  $("appealMsg").innerHTML = '<span class="ok">&#10003; Status is now "' + (d.status||"under_review") + '" &mdash; logged for a human to review.</span>';
+}
+</script>
+</body></html>

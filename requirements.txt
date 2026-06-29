@@ -1,0 +1,8 @@
+flask>=3.0.0
+flask-limiter>=3.5.0
+groq==0.15.0
+python-dotenv==1.0.1
+
+# Test runner — kept here so a clean `pip install -r requirements.txt` followed by
+# `pytest -q` works out of the box (the test suite is part of the deliverable).
+pytest>=7.0
